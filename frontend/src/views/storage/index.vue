@@ -67,6 +67,44 @@
       <span>共 {{ total }} 条库房管理记录</span>
       <span v-if="errorMessage" class="error-text">{{ errorMessage }}</span>
     </footer>
+
+    <section class="inbound-section">
+      <h3 class="section-title">标本入库事项</h3>
+      <p class="section-desc">人骨鉴定复核确认后跨模块生成的入库事项，同一标本只保留一条，办理入库后事项闭环。</p>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th v-for="column in inboundColumns" :key="column">{{ column }}</th>
+            <th>状态</th>
+            <th>可执行动作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="item in inboundRows" :key="String(item.id)">
+            <td v-for="column in inboundColumns" :key="column">{{ item[column] ?? '—' }}</td>
+            <td>{{ item.status }}</td>
+            <td class="row-actions">
+              <button
+                v-if="item.status === '待入库'"
+                class="link"
+                type="button"
+                @click="runInbound(Number(item.id))"
+              >
+                办理入库
+              </button>
+              <span v-else>—</span>
+            </td>
+          </tr>
+          <tr v-if="!inboundRows.length">
+            <td :colspan="inboundColumns.length + 2" class="empty-state">暂无入库事项，人骨鉴定复核确认后自动生成</td>
+          </tr>
+        </tbody>
+      </table>
+      <footer class="page-foot">
+        <span>共 {{ inboundRows.length }} 条标本入库事项</span>
+        <span v-if="inboundMessage" class="notice-text">{{ inboundMessage }}</span>
+      </footer>
+    </section>
   </section>
 </template>
 
@@ -79,6 +117,7 @@ import {
   moduleMeta,
   runAction as applyAction,
 } from '@/api/local-service'
+import { completeInboundItem, listInboundItems } from '@/api/inbound'
 import type { EntryRow } from '@/data/types'
 
 const meta = moduleMeta('storage')
@@ -86,11 +125,14 @@ const columns = ["架位编号", "库房名称", "存放器物类别", "架位�
 const actions = ["存放器物", "调整整理", "临时封存"]
 const statuses = ["正常使用", "已满", "待整理", "临时封存"]
 const stats = [{"label": "架位总数", "value": 0}, {"label": "已满架位", "value": 0}, {"label": "可用架位", "value": 0}]
+const inboundColumns = ["事项编号", "标本编号", "标本类别", "出土单位", "采集单位", "复核人", "生成时间"]
 
 const rows = ref<EntryRow[]>([])
 const total = ref(0)
 const errorMessage = ref('')
 const filters = ref<Record<string, string>>({})
+const inboundRows = ref<EntryRow[]>([])
+const inboundMessage = ref('')
 const filterFields = columns.slice(0, 3)
 const statusSummary = computed(() =>
   statuses.map((status: string) => ({
@@ -133,5 +175,18 @@ function reload() {
   }
 }
 
-onMounted(reload)
+function loadInbound() {
+  inboundRows.value = listInboundItems()
+}
+
+function runInbound(id: number) {
+  const result = completeInboundItem(id)
+  inboundMessage.value = result.message
+  loadInbound()
+}
+
+onMounted(() => {
+  reload()
+  loadInbound()
+})
 </script>

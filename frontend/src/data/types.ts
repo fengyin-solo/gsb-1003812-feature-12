@@ -27,6 +27,18 @@ export type PageResult = {
   size: number
 }
 
+/** 鉴定席位：采集单位登记送鉴，鉴定人判定性别/年龄/病理，复核人最终确认。 */
+export type SeatRole = 'collector' | 'identifier' | 'reviewer'
+
+export type SeatProfile = {
+  name: string
+  unit: string
+}
+
+export type SeatContext = SeatProfile & {
+  role: SeatRole
+}
+
 export type ActionResult = {
   ok: boolean
   message: string
