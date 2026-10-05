@@ -30,6 +30,8 @@ export type PageResult = {
 export type ActionResult = {
   ok: boolean
   message: string
+  // 动作本身成功，但按业务规则做了自动修正（如性别/年龄冲突被降级）时给出提示。
+  warning?: string
 }
 
 export type OverviewResult = {

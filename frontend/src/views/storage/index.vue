@@ -67,12 +67,69 @@
       <span>共 {{ total }} 条库房管理记录</span>
       <span v-if="errorMessage" class="error-text">{{ errorMessage }}</span>
     </footer>
+
+    <!-- 跨模块事项：人骨鉴定复核确认后自动生成，待入库的标本在此落实架位。 -->
+    <section class="inbound-block">
+      <header class="inbound-head">
+        <h3>标本入库事项</h3>
+        <span class="page-desc">来源：人骨鉴定复核确认；重复确认只保留一条，待入库 {{ inboundStats.waiting }} 件、已入库 {{ inboundStats.done }} 件。</span>
+      </header>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th v-for="column in inboundColumns" :key="column">{{ column }}</th>
+            <th>事项状态</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="item in inboundRows" :key="String(item.id)">
+            <td v-for="column in inboundColumns" :key="column">{{ item[column] || '—' }}</td>
+            <td>{{ item.status }}</td>
+            <td class="row-actions">
+              <button v-if="item.status === '待入库'" class="link" type="button" @click="openInbound(item)">
+                办理入库
+              </button>
+              <span v-else class="muted-text">已完成</span>
+            </td>
+          </tr>
+          <tr v-if="!inboundRows.length">
+            <td :colspan="inboundColumns.length + 2" class="empty-state">暂无标本入库事项</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 入库办理：指定架位与管理人后事项转为「已入库」。 -->
+    <div v-if="showInbound" class="modal-mask" @click.self="showInbound = false">
+      <div class="modal-card">
+        <h3>标本入库 · {{ inboundTarget?.['标本编号'] }}</h3>
+        <p class="modal-hint">鉴定结论：{{ inboundTarget?.['鉴定结论'] }}；采集单位：{{ inboundTarget?.['采集单位'] }}</p>
+        <label class="form-item">
+          <span>架位编号 *</span>
+          <input v-model="inboundForm.shelf" placeholder="如 STOR-0001-A3" />
+        </label>
+        <label class="form-item">
+          <span>管理人</span>
+          <input v-model="inboundForm.keeper" placeholder="库房经手人，可留空" />
+        </label>
+        <p v-if="inboundError" class="error-text">{{ inboundError }}</p>
+        <div class="modal-actions">
+          <button class="btn ghost" type="button" @click="showInbound = false">取消</button>
+          <button class="btn primary" type="button" @click="submitInbound">确认入库</button>
+        </div>
+      </div>
+    </div>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 
+import {
+  completeInbound,
+  listInboundItems,
+} from '@/api/storage-service'
 import {
   downloadEntries,
   listEntries,
@@ -99,6 +156,19 @@ const statusSummary = computed(() =>
   })),
 )
 
+// 跨模块入库事项
+const inboundColumns = ["标本编号", "采集单位", "复核人", "鉴定结论", "架位编号", "管理人", "入库时间"]
+const inboundRows = ref<EntryRow[]>([])
+const showInbound = ref(false)
+const inboundError = ref('')
+const inboundTarget = ref<EntryRow | null>(null)
+const inboundForm = reactive({ shelf: '', keeper: '' })
+
+const inboundStats = computed(() => ({
+  waiting: inboundRows.value.filter((row) => String(row.status) === '待入库').length,
+  done: inboundRows.value.filter((row) => String(row.status) === '已入库').length,
+}))
+
 function resetFilters() {
   filters.value = {}
   reload()
@@ -122,12 +192,34 @@ function runAction(action: string, row: EntryRow) {
   reload()
 }
 
+function openInbound(row: EntryRow) {
+  inboundTarget.value = row
+  inboundForm.shelf = ''
+  inboundForm.keeper = ''
+  inboundError.value = ''
+  showInbound.value = true
+}
+
+function submitInbound() {
+  if (!inboundTarget.value) {
+    return
+  }
+  const result = completeInbound(Number(inboundTarget.value.id), inboundForm.shelf, inboundForm.keeper)
+  if (!result.ok) {
+    inboundError.value = result.message
+    return
+  }
+  showInbound.value = false
+  reload()
+}
+
 function reload() {
   errorMessage.value = ''
   try {
     const payload = listEntries(meta.key, filters.value)
     rows.value = payload.items
     total.value = payload.total
+    inboundRows.value = listInboundItems()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '库房管理列表读取失败'
   }
@@ -135,3 +227,65 @@ function reload() {
 
 onMounted(reload)
 </script>
+
+<style scoped>
+.inbound-block {
+  margin-top: 24px;
+}
+.inbound-head {
+  margin-bottom: 8px;
+}
+.inbound-head h3 {
+  margin: 0 0 2px;
+}
+.muted-text {
+  color: var(--muted);
+  font-size: 12px;
+}
+.modal-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+}
+.modal-card {
+  width: 440px;
+  background: #fff;
+  border-radius: 10px;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.modal-card h3 {
+  margin: 0;
+}
+.modal-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.form-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.form-item input {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+  color: #1f2937;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+</style>
